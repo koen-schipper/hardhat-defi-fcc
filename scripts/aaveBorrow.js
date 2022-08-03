@@ -2,20 +2,21 @@ const { getNamedAccounts, ethers } = require("hardhat")
 const { getWeth, AMOUNT } = require("../scripts/getWeth")
 
 async function main() {
-    await getWeth()
+    const daiAddress = "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+    const wethTokenAddress = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     const { deployer } = await getNamedAccounts()
 
+    await getWeth()
     const lendingPool = await getLendingPool(deployer)
     console.log(`LendingPool address ${lendingPool.address}`)
 
-    // Depositing WETH
-    const wethTokenAddress = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+    // Deposit collateral: ETH / WETH
     await approveErc20(wethTokenAddress, lendingPool.address, AMOUNT, deployer)
     console.log("Depositing...")
     await lendingPool.deposit(wethTokenAddress, AMOUNT, deployer, 0)
     console.log("Deposited!")
 
-    // Borrowing DAI
+    // Borrow another asset: DAI
     let { totalDebtETH, availableBorrowsETH } = await getBorrowUserData(
         lendingPool,
         deployer
@@ -27,6 +28,36 @@ async function main() {
     const amountDaiToBorrowWei = ethers.utils.parseEther(
         amountDaiToBorrow.toString()
     )
+    await borrowDai(daiAddress, lendingPool, amountDaiToBorrowWei, deployer)
+    await getBorrowUserData(lendingPool, deployer)
+
+    // Repay the DAI
+    await repay(amountDaiToBorrowWei, daiAddress, lendingPool, deployer)
+    await getBorrowUserData(lendingPool, deployer)
+}
+
+async function repay(amount, daiAddress, lendingPool, account) {
+    await approveErc20(daiAddress, lendingPool.address, amount, account)
+    const repayTx = await lendingPool.repay(daiAddress, amount, 1, account)
+    await repayTx.wait(1)
+    console.log(`You've repaid ${amount} DAI!`)
+}
+
+async function borrowDai(
+    daiAddress,
+    lendingPool,
+    amountDaiToBorrowWei,
+    account
+) {
+    const borrowTx = await lendingPool.borrow(
+        daiAddress,
+        amountDaiToBorrowWei,
+        1,
+        0,
+        account
+    )
+    await borrowTx.wait(1)
+    console.log("You've borrowed!")
 }
 
 async function getDaiPrice(account) {
